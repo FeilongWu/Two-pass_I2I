@@ -1,0 +1,4 @@
+datasets/
+checkpoints/
+*.txt
+*.pyc
