@@ -19,16 +19,16 @@ class AlignedPseudoDataset(BaseDataset):
             opt (Option class) -- stores all the experiment flags; needs to be a subclass of BaseOptions
         """
         BaseDataset.__init__(self, opt)
-        self.dir_AB = os.path.join(opt.pseudo_data_root, opt.phase)  # get the image directory
+        self.dir_AB = os.path.join(opt.dataroot, opt.phase)  # get the image directory
         self.AB_paths = sorted(make_dataset(self.dir_AB, opt.max_dataset_size))  # get image paths
         assert(self.opt.load_size >= self.opt.crop_size)   # crop_size should be smaller than the size of loaded image
         self.input_nc = self.opt.output_nc if self.opt.direction == 'BtoA' else self.opt.input_nc
         self.output_nc = self.opt.input_nc if self.opt.direction == 'BtoA' else self.opt.output_nc
 
         if opt.direction == "AtoB":
-            self.dir_real = os.path.join(opt.pseudo_data_root, opt.phase + 'B')  # create a path '/path/to/data/trainB'
+            self.dir_real = os.path.join(opt.dataroot, opt.phase + 'B')  # create a path '/path/to/data/trainB'
         elif opt.direction == 'BtoA':
-            self.dir_real = os.path.join(opt.pseudo_data_root, opt.phase + 'A')  # create a path '/path/to/data/trainA'
+            self.dir_real = os.path.join(opt.dataroot, opt.phase + 'A')  # create a path '/path/to/data/trainA'
         else:
             assert 'Invalid direction: ' + opt.direction
 
@@ -74,7 +74,7 @@ class AlignedPseudoDataset(BaseDataset):
         real_img = Image.open(real_path).convert('RGB')
         real = self.transform_real(real_img)
 
-        return {'pseudo_A': A, 'pseudo_B': B, 'ground_truth': real, 'A_paths': AB_path, \
+        return {'A': A, 'B': B, 'ground_truth': real, 'A_paths': AB_path, \
                 'B_paths': AB_path, 'real_path': real_path}
 
     def __len__(self):

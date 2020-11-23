@@ -61,9 +61,9 @@ class Pix2PixModel(BaseModel):
 
         if self.isTrain:  # define a discriminator; conditional GANs need to take both input and output images; Therefore, #channels for D is input_nc + output_nc
             use_sigmoid = True
-            self.netD = networks.define_D(opt.input_nc + opt.output_nc, opt.ndf, opt.netD,
-                                          opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
-            self.netD2 = networks.define_D(opt.output_nc, opt.ndf, opt.netD,
+            #self.netD = networks.define_D(opt.input_nc + opt.output_nc, opt.ndf, opt.netD,
+            #                              opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
+            self.netD = networks.define_D(opt.output_nc, opt.ndf, opt.netD,
                                           opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids, use_sigmoid = use_sigmoid) # for relativistic loss
 
         if self.isTrain:
@@ -73,11 +73,11 @@ class Pix2PixModel(BaseModel):
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
             self.optimizer_G = torch.optim.Adam(self.netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
-            self.optimizer_D2 = torch.optim.Adam(self.netD2.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+            #self.optimizer_D2 = torch.optim.Adam(self.netD2.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizers = []
             self.optimizers.append(self.optimizer_G)
             self.optimizers.append(self.optimizer_D)
-            self.optimizers.append(self.optimizer_D2)
+            #self.optimizers.append(self.optimizer_D2)
             self.im_pool = ImagePool(opt.pool_size)
             self.MedianPool = MedianPool2d()
             self.softmax = torch.nn.Softmax(dim=1)
@@ -95,13 +95,10 @@ class Pix2PixModel(BaseModel):
         self.dataset_mode = dataset_mode
         
         AtoB = self.opt.direction == 'AtoB'
-        if self.dataset_mode == 'alignedpseudo':
-            self.real_A = input['pseudo_A' if AtoB else 'pseudo_B'].to(self.device)
-            self.real_B = input['pseudo_B' if AtoB else 'pseudo_A'].to(self.device)
-            self.GT = input['ground_truth'].to(self.device)
-        else:  
-            self.real_A = input['A' if AtoB else 'B'].to(self.device)
-            self.real_B = input['B' if AtoB else 'A'].to(self.device)
+        
+        self.real_A = input['A' if AtoB else 'B'].to(self.device)
+        self.real_B = input['B' if AtoB else 'A'].to(self.device)
+        self.GT = input['ground_truth'].to(self.device)
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
         
@@ -109,38 +106,45 @@ class Pix2PixModel(BaseModel):
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
         self.fake_B = self.netG(self.real_A)  # G(A)
+        
+
+##    def backward_D(self):
+##        """Calculate GAN loss for the discriminator"""
+##        # Fake; stop backprop to the generator by detaching fake_B
+##        fake_AB = torch.cat((self.real_A, self.fake_B), 1)  # we use conditional GANs; we need to feed both input and output to the discriminator
+##        pred_fake = self.netD(fake_AB.detach())
+##        self.loss_D_fake = self.criterionGAN(pred_fake, False)
+##        # Real
+##        real_AB = torch.cat((self.real_A, self.real_B), 1)
+##        pred_real = self.netD(real_AB)
+##        self.loss_D_real = self.criterionGAN(pred_real, True)
+##        # combine loss and calculate gradients
+##        self.loss_D = (self.loss_D_fake + self.loss_D_real) * 0.5
+##        self.loss_D.backward()
 
     def backward_D(self):
-        """Calculate GAN loss for the discriminator"""
-        # Fake; stop backprop to the generator by detaching fake_B
-        fake_AB = torch.cat((self.real_A, self.fake_B), 1)  # we use conditional GANs; we need to feed both input and output to the discriminator
-        pred_fake = self.netD(fake_AB.detach())
-        self.loss_D_fake = self.criterionGAN(pred_fake, False)
-        # Real
-        real_AB = torch.cat((self.real_A, self.real_B), 1)
-        pred_real = self.netD(real_AB)
-        self.loss_D_real = self.criterionGAN(pred_real, True)
-        # combine loss and calculate gradients
-        self.loss_D = (self.loss_D_fake + self.loss_D_real) * 0.5
-        self.loss_D.backward()
-
+        fake_B = self.im_pool.query(self.fake_B) # prediction
+        self.loss_D = self.backward_D_basic(self.netD, self.GT, fake_B)
+        
     def backward_D_basic(self, netD, real, fake):
-        pred_real = self.netD2(real)
-        pred_fake = self.netD2(fake.detach())
+        pred_real = netD(real)
+        pred_fake = netD(fake.detach())
        # if(self.opt.loss_case=='rel_bce'):
         loss_D = self.criterionGAN(pred_real - pred_fake, True)
        # else:
        #     loss_D = (torch.mean((pred_real - torch.mean(pred_fake) - 1.0) ** 2) + torch.mean((pred_fake - torch.mean(pred_real) + 1.0) ** 2))/2
         loss_D.backward()
+        self.loss_D_real = loss_D
+        self.loss_D_fake = -99
         return loss_D
 
-    def backward_D2(self):
-        # calculate relativistic loss
-        fake_B = self.im_pool.query(self.fake_B) # prediction
-        if self.dataset_mode == 'alignedpseudo':
-            self.loss_D2 = self.backward_D_basic(self.netD2, self.GT, fake_B)
-        else:
-            self.loss_D2 = self.backward_D_basic(self.netD2, self.real_B, fake_B)
+##    def backward_D2(self):
+##        # calculate relativistic loss
+##        fake_B = self.im_pool.query(self.fake_B) # prediction
+##        if self.dataset_mode == 'alignedpseudo':
+##            self.loss_D2 = self.backward_D_basic(self.netD2, self.GT, fake_B)
+##        else:
+##            self.loss_D2 = self.backward_D_basic(self.netD2, self.real_B, fake_B)
 
     def L_classification(self):
         # calculate classification loss
@@ -156,44 +160,62 @@ class Pix2PixModel(BaseModel):
         loss = - torch.mean(torch.mul(self.softmax(pre_B), self.logsoftmax(pre_B)))
         return loss
 
+
     def backward_G(self):
-        """Calculate GAN and L1 loss for the generator"""
-        pred_fake_rel = self.netD2(self.im_pool.query(self.fake_B)) # prediction for relativistic loss
-        
-        if self.dataset_mode != 'alignedpseudo':
-            # First, G(A) should fake the discriminator
-            fake_AB = torch.cat((self.real_A, self.fake_B), 1)
-            pred_fake = self.netD(fake_AB)
-            self.loss_G_GAN = self.criterionGAN(pred_fake, True)
-            
-            self.classification_loss = self.L_classification()
-            
-            pred_real_rel = self.netD2(self.real_B)
-            
+        # identity loss use only for pseudo labels
+        if self.dataset_mode == 'alignedpseudo':
+            tot_lambda = 0.1
+            pass
         else:
-            fake_AB = torch.cat((self.real_A, self.fake_B), 1)
-            pred_fake = self.netD(fake_AB)
-            pro_fake = self.criterionGAN(pred_fake, False)
-            real_AB = torch.cat((self.real_A, self.real_B), 1)
-            pred_real = self.netD(real_AB)
-            pro_real = self.criterionGAN(pred_real, False)
-            self.loss_G_GAN = pro_real / pro_fake
-            
-            self.classification_loss = 0
-            
-            pred_real_rel = self.netD2(self.GT)
-        #self.loss_G_GAN2 = (torch.mean((pred_real - torch.mean(pred_fake) + 1.0)\
-        #                                   ** 2) + torch.mean((pred_fake - torch.mean(pred_real) - 1.0) ** 2))/2
-        self.loss_G_GAN2 = self.criterionGAN(pred_fake_rel - pred_real_rel, True)
-        self.entropy_L = self.entropy()
-        self.loss_G_GAN += self.loss_G_GAN2
-        # Second, G(A) = B
-        self.loss_G_L1 = 0
-        if not self.decay:
-            self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_L1
-        # combine loss and calculate gradients
-        self.loss_G = self.loss_G_GAN + self.loss_G_L1 + self.entropy_L + self.classification_loss * self.opt.lambda_Lc
+            tot_lambda = 1
+            self.idt_loss = 0
+
+        self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_L1
+        pred_fake_rel = self.netD(self.im_pool.query(self.fake_B)) # prediction for relativistic loss
+        pred_real_rel = self.netD(self.real_B)
+        self.loss_G_GAN = self.criterionGAN(pred_fake_rel - pred_real_rel, True)
+        self.loss_G = (self.loss_G_GAN + self.loss_G_L1 + self.idt_loss) * tot_lambda
         self.loss_G.backward()
+        
+
+##    def backward_G(self):
+##        """Calculate GAN and L1 loss for the generator"""
+##        pred_fake_rel = self.netD2(self.im_pool.query(self.fake_B)) # prediction for relativistic loss
+##        
+##        if self.dataset_mode != 'alignedpseudo':
+##            # First, G(A) should fake the discriminator
+##            fake_AB = torch.cat((self.real_A, self.fake_B), 1)
+##            pred_fake = self.netD(fake_AB)
+##            self.loss_G_GAN = self.criterionGAN(pred_fake, True)
+##            
+##            self.classification_loss = self.L_classification()
+##            
+##            pred_real_rel = self.netD2(self.real_B)
+##            
+##        else:
+##            fake_AB = torch.cat((self.real_A, self.fake_B), 1)
+##            pred_fake = self.netD(fake_AB)
+##            pro_fake = self.criterionGAN(pred_fake, False)
+##            real_AB = torch.cat((self.real_A, self.real_B), 1)
+##            pred_real = self.netD(real_AB)
+##            pro_real = self.criterionGAN(pred_real, False)
+##            self.loss_G_GAN = pro_real / pro_fake
+##            
+##            self.classification_loss = 0
+##            
+##            pred_real_rel = self.netD2(self.GT)
+##        #self.loss_G_GAN2 = (torch.mean((pred_real - torch.mean(pred_fake) + 1.0)\
+##        #                                   ** 2) + torch.mean((pred_fake - torch.mean(pred_real) - 1.0) ** 2))/2
+##        self.loss_G_GAN2 = self.criterionGAN(pred_fake_rel - pred_real_rel, True)
+##        self.entropy_L = self.entropy()
+##        self.loss_G_GAN += self.loss_G_GAN2
+##        # Second, G(A) = B
+##        self.loss_G_L1 = 0
+##        if not self.decay:
+##            self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_L1
+##        # combine loss and calculate gradients
+##        self.loss_G = self.loss_G_GAN + self.loss_G_L1 + self.entropy_L + self.classification_loss * self.opt.lambda_Lc
+##        self.loss_G.backward()
 
 ##        #########################
 ##        url='lossGAN.txt'
@@ -209,16 +231,23 @@ class Pix2PixModel(BaseModel):
     def optimize_parameters(self):
         self.forward()                   # compute fake images: G(A)
         # update D
-        if self.dataset_mode != 'alignedpseudo':
-            self.set_requires_grad(self.netD, True)  # enable backprop for D
-            self.optimizer_D.zero_grad()     # set D's gradients to zero
-            self.backward_D()                # calculate gradients for D
-            self.optimizer_D.step()          # update D's weights
+##        if self.dataset_mode != 'alignedpseudo':
+##            self.set_requires_grad(self.netD, True)  # enable backprop for D
+##            self.optimizer_D.zero_grad()     # set D's gradients to zero
+##            self.backward_D()                # calculate gradients for D
+##            self.optimizer_D.step()          # update D's weights
+##        
+##        self.set_requires_grad(self.netD2, True)
+##        self.optimizer_D2.zero_grad()
+##        self.backward_D2()
+##        self.optimizer_D2.step()
+
+        self.set_requires_grad(self.netD, True)    # enable backprop for D
+        self.optimizer_D.zero_grad()            # set D's gradients to zero
+        self.backward_D()                # calculate gradients for D
+        self.optimizer_D.step()          # update D's weights
         
-        self.set_requires_grad(self.netD2, True)
-        self.optimizer_D2.zero_grad()
-        self.backward_D2()
-        self.optimizer_D2.step()
+        
         # update G
         self.set_requires_grad(self.netD, False)  # D requires no gradients when optimizing G
         self.optimizer_G.zero_grad()        # set G's gradients to zero

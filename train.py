@@ -6,15 +6,24 @@ from util.visualizer import Visualizer
 import copy
 
 if __name__ == '__main__':
+##    opt = TrainOptions().parse()
+##    dataset = create_dataset(opt)
+##    dataset_size = len(dataset)
+##    print('#training images = %d' % dataset_size)
+
+    #opt1 = copy.deepcopy(opt)
+    #dataset_mode = 'alignedpseudo'
+    #opt1.dataset_mode = dataset_mode
+    
     opt = TrainOptions().parse()
+    opt.dataset_mode = 'alignedpseudo'
+    opt.gan_mode = 'vanilla'
     dataset = create_dataset(opt)
     dataset_size = len(dataset)
     print('#training images = %d' % dataset_size)
-
     opt1 = copy.deepcopy(opt)
+    opt1.dataroot = opt1.pseudo_data_root
     dataset_mode = 'alignedpseudo'
-    opt1.dataset_mode = dataset_mode
-    opt.gan_mode = 'vanilla'
     dataset_pseudo = create_dataset(opt1)
     dataset_size_pseudo = len(dataset_pseudo)
     print('#training images = %d' % dataset_size_pseudo)
@@ -24,10 +33,12 @@ if __name__ == '__main__':
 ##        for i,data in enumerate(dataset):
 ##            
 ##            f.write(str(data)+'\n')
+##            break
 ##        f.close()
 ##        f=open('pseudo_aligned.txt','a')
 ##        for i,data in enumerate(dataset_pseudo):
 ##            f.write(str(data)+'\n')
+##            break
 ##        f.close()
     model = create_model(opt)      # create a model given opt.model and other options
     model.setup(opt)               # regular setup: load and print networks; create schedulers
