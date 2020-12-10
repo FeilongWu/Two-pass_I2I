@@ -1,6 +1,7 @@
 import time
 from options.train_options import TrainOptions
 from data import create_dataset
+from data import load_y
 from models import create_model
 from util.visualizer import Visualizer
 import copy
@@ -16,6 +17,7 @@ if __name__ == '__main__':
     #opt1.dataset_mode = dataset_mode
     
     opt = TrainOptions().parse()
+    #opt.preprocess = 'resize'
     opt.dataset_mode = 'alignedpseudo'
     opt.gan_mode = 'vanilla'
     dataset = create_dataset(opt)
@@ -23,23 +25,39 @@ if __name__ == '__main__':
     print('#training images = %d' % dataset_size)
     opt1 = copy.deepcopy(opt)
     opt1.dataroot = opt1.pseudo_data_root
+    #######
+    opt1.serial_batches = True
+    #opt1.preprocess = 'resize'
+    opt1.dataset_mode = 'alignedpseudo1'
+    #######
     dataset_mode = 'alignedpseudo'
     dataset_pseudo = create_dataset(opt1)
+    opt1.dataset_mode = 'alignedpseudo'
     dataset_size_pseudo = len(dataset_pseudo)
     print('#training images = %d' % dataset_size_pseudo)
 
-##    for i in range(3):
+    ### load pseudo label with numpy, which is updated along with network parameters
+
+##    for ii in range(1):
 ##        f=open('aligned.txt','a')
 ##        for i,data in enumerate(dataset):
-##            
 ##            f.write(str(data)+'\n')
-##            break
+##            if i==3:
+##                break
 ##        f.close()
 ##        f=open('pseudo_aligned.txt','a')
-##        for i,data in enumerate(dataset_pseudo):
+##        for j,data in enumerate(dataset_pseudo):
 ##            f.write(str(data)+'\n')
-##            break
+##            if j==3:
+##                break
 ##        f.close()
+
+
+        ####
+    # intermediate y create or load
+    y_i = load_y(opt1,dataset_pseudo)
+
+    
     model = create_model(opt)      # create a model given opt.model and other options
     model.setup(opt)               # regular setup: load and print networks; create schedulers
     visualizer = Visualizer(opt)   # create a visualizer that display/save images and plots
@@ -70,6 +88,8 @@ if __name__ == '__main__':
 
             total_iters += opt.batch_size
             epoch_iter += opt.batch_size
+            data['B'] = y_i[i] # replace pseudo label with the y intermediate
+            #data['B'].grad = None
             model.set_input(data, decay = decay, dataset_mode = dataset_mode) # unpack data from dataset and apply preprocessing
             model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
 
@@ -97,3 +117,4 @@ if __name__ == '__main__':
             model.save_networks(epoch)
 
         print('End of epoch %d / %d \t Time Taken: %d sec' % (epoch, opt.n_epochs + opt.n_epochs_decay, time.time() - epoch_start_time))
+

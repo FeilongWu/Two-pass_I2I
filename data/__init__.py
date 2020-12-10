@@ -13,6 +13,8 @@ See our template dataset class 'template_dataset.py' for more details.
 import importlib
 import torch.utils.data
 from data.base_dataset import BaseDataset
+import os
+import torch
 
 
 def find_dataset_using_name(dataset_name):
@@ -93,3 +95,27 @@ class CustomDatasetDataLoader():
             if i * self.opt.batch_size >= self.opt.max_dataset_size:
                 break
             yield data
+
+def load_y(opt,pseudo_data):
+    # opt: options
+    # pseudo_data: torch data loader
+    # if y_intermediate exists, return it
+    # otherwise, return it and create the y_intermediate file
+    y_i_url = opt.dataroot+'//y_intermediate.pt'
+    if os.path.exists(y_i_url):
+        print('Load y intermediate from saved file')
+        result = torch.load(y_i_url)
+        #for i in range(len(result)):
+        #    result[i] = torch.autograd.Variable(result[i], requires_grad = False)
+    else:
+        print('Create y intermediate')
+        for i,j in enumerate(pseudo_data):
+        #    y = torch.autograd.Variable(j['B'].unsqueeze(0),
+        #                                requires_grad = False)
+            y = j['B'].unsqueeze(0)  
+            if i==0:
+                result = y
+            else:
+                result = torch.cat((result, y))
+        torch.save(result, y_i_url)
+    return result

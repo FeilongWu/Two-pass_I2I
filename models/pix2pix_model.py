@@ -79,9 +79,9 @@ class Pix2PixModel(BaseModel):
             self.optimizers.append(self.optimizer_D)
             #self.optimizers.append(self.optimizer_D2)
             self.im_pool = ImagePool(opt.pool_size)
-            self.MedianPool = MedianPool2d()
-            self.softmax = torch.nn.Softmax(dim=1)
-            self.logsoftmax = torch.nn.LogSoftmax(dim=1).cuda()
+            #self.MedianPool = MedianPool2d()
+            #self.softmax = torch.nn.Softmax(dim=1)
+            #self.logsoftmax = torch.nn.LogSoftmax(dim=1).cuda()
 
     def set_input(self, input, decay = False, dataset_mode = 'aligned'):
         """Unpack input data from the dataloader and perform necessary pre-processing steps.
