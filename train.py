@@ -90,7 +90,8 @@ if __name__ == '__main__':
             epoch_iter += opt.batch_size
             data['B'] = y_i[i] # replace pseudo label with the y intermediate
             #data['B'].grad = None
-            model.set_input(data, decay = decay, dataset_mode = dataset_mode) # unpack data from dataset and apply preprocessing
+            model.set_input(data, decay = decay, dataset_mode = dataset_mode,
+                            index=i, y_i=y_i) # unpack data from dataset and apply preprocessing
             model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
 
             if total_iters % opt.display_freq == 0:   # display images on visdom and save images to a HTML file

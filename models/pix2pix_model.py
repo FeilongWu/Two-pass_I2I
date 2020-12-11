@@ -3,6 +3,7 @@ from .base_model import BaseModel
 from util.image_pool import ImagePool
 from . import networks
 from .networks import MedianPool2d
+import copy
 
 
 class Pix2PixModel(BaseModel):
@@ -79,11 +80,15 @@ class Pix2PixModel(BaseModel):
             self.optimizers.append(self.optimizer_D)
             #self.optimizers.append(self.optimizer_D2)
             self.im_pool = ImagePool(opt.pool_size)
-            #self.MedianPool = MedianPool2d()
-            #self.softmax = torch.nn.Softmax(dim=1)
+            self.MedianPool = MedianPool2d()
+            self.softmax = torch.nn.Softmax(dim=1)
             #self.logsoftmax = torch.nn.LogSoftmax(dim=1).cuda()
+            self.criterionIdt = torch.nn.L1Loss()
+            self.criterionComp = torch.nn.CrossEntropyLoss().cuda()
 
-    def set_input(self, input, decay = False, dataset_mode = 'aligned'):
+    def set_input(self, input, decay = False, dataset_mode = 'aligned', index=None, y_i=None):
+        # index: the index of y intermediate
+        # y_i: y intermediate indexed by "index"
         """Unpack input data from the dataloader and perform necessary pre-processing steps.
 
         Parameters:
@@ -93,11 +98,15 @@ class Pix2PixModel(BaseModel):
         """
         self.decay = decay
         self.dataset_mode = dataset_mode
+        self.index = index
         
         AtoB = self.opt.direction == 'AtoB'
         
         self.real_A = input['A' if AtoB else 'B'].to(self.device)
-        self.real_B = input['B' if AtoB else 'A'].to(self.device)
+        self.real_B = input['B' if AtoB else 'A'].to(self.device) # self.real_B can be pseudo
+        if index:
+            y_i[index] = torch.autograd.Variable(y_i[index].to(self.device), requires_grad = True)
+            self.y_i = y_i
         self.GT = input['ground_truth'].to(self.device)
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
@@ -146,12 +155,12 @@ class Pix2PixModel(BaseModel):
 ##        else:
 ##            self.loss_D2 = self.backward_D_basic(self.netD2, self.real_B, fake_B)
 
-    def L_classification(self):
+    def L_classification(self, pred, y_i):
         # calculate classification loss
-        gt_b = self.MedianPool(self.real_B)
-        pre_b = self.MedianPool(self.fake_B)
+        gt_b = self.MedianPool(y_i)
+        pre_b = self.softmax(self.MedianPool(pred))
 
-        loss = torch.mean(torch.mul(pre_b, torch.log(torch.div(self.softmax(pre_b),self.softmax(gt_b)))))
+        loss = torch.mean(torch.mul(pre_b, torch.log(torch.div(pre_b,self.softmax(gt_b)))))
         return loss
 
     def entropy(self):
@@ -165,7 +174,8 @@ class Pix2PixModel(BaseModel):
         # identity loss use only for pseudo labels
         if self.dataset_mode == 'alignedpseudo':
             tot_lambda = 0.1
-            pass
+            self.idt_A = self.netG(self.real_B) 
+            self.idt_loss = self.criterionIdt(self.idt_A, self.real_B)*0.6
         else:
             tot_lambda = 1
             self.idt_loss = 0
@@ -174,7 +184,8 @@ class Pix2PixModel(BaseModel):
         pred_fake_rel = self.netD(self.im_pool.query(self.fake_B)) # prediction for relativistic loss
         pred_real_rel = self.netD(self.real_B)
         self.loss_G_GAN = self.criterionGAN(pred_fake_rel - pred_real_rel, True)
-        self.loss_G = (self.loss_G_GAN + self.loss_G_L1 + self.idt_loss) * tot_lambda
+        self.loss_cla = self.L_classification(self.fake_B, self.real_B)
+        self.loss_G = (self.loss_G_GAN + self.loss_G_L1 + self.idt_loss + self.loss_cla) * tot_lambda
         self.loss_G.backward()
         
 
@@ -228,6 +239,17 @@ class Pix2PixModel(BaseModel):
 ##        f.close()
 ##        #########################
 
+    def backward_y_i(self):
+        # update y_i using classfication and compatibility losses
+        lc = self.L_classification(self.fake_B.detach(), self.y_i[self.index]) # classification loss
+        y_i_copy = torch.from_numpy(copy.copy(self.y_i[self.index].numpy()))
+        lc.backward()
+
+        last_y_i = self.MedianPool(y_i_copy)
+        target_y = self.MedianPool(self.y_i[self.index])
+        lo = self.criterionComp(last_y_i, target_y) # compatibility loss
+        lo.backward()
+
     def optimize_parameters(self):
         self.forward()                   # compute fake images: G(A)
         # update D
@@ -253,3 +275,7 @@ class Pix2PixModel(BaseModel):
         self.optimizer_G.zero_grad()        # set G's gradients to zero
         self.backward_G()                   # calculate graidents for G
         self.optimizer_G.step()             # udpate G's weights
+
+        # update y_i
+        if seft.index:
+            self.backward_y_i()
