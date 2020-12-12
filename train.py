@@ -5,6 +5,7 @@ from data import load_y
 from models import create_model
 from util.visualizer import Visualizer
 import copy
+import torch
 
 if __name__ == '__main__':
 ##    opt = TrainOptions().parse()
@@ -88,7 +89,7 @@ if __name__ == '__main__':
 
             total_iters += opt.batch_size
             epoch_iter += opt.batch_size
-            data['B'] = y_i[i] # replace pseudo label with the y intermediate
+            data['B'] = y_i[i].clone().detach() # replace pseudo label with the y intermediate
             #data['B'].grad = None
             model.set_input(data, decay = decay, dataset_mode = dataset_mode,
                             index=i, y_i=y_i) # unpack data from dataset and apply preprocessing
@@ -112,10 +113,14 @@ if __name__ == '__main__':
                 model.save_networks(save_suffix)
 
             iter_data_time = time.time()
+        #y_i = torch.from_numpy(y_i.numpy()) # clear all gradients
+        #y_i = torch.from_numpy(y_i.numpy(), device=opt1.device)
         if epoch % opt.save_epoch_freq == 0:              # cache our model every <save_epoch_freq> epochs
             print('saving the model at the end of epoch %d, iters %d' % (epoch, total_iters))
             model.save_networks('latest')
             model.save_networks(epoch)
+            print('Saving y intermediate')
+            torch.save(y_i, opt.dataroot+'//y_intermediate.pt')
 
         print('End of epoch %d / %d \t Time Taken: %d sec' % (epoch, opt.n_epochs + opt.n_epochs_decay, time.time() - epoch_start_time))
 

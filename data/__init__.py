@@ -102,6 +102,12 @@ def load_y(opt,pseudo_data):
     # if y_intermediate exists, return it
     # otherwise, return it and create the y_intermediate file
     y_i_url = opt.dataroot+'//y_intermediate.pt'
+    result = []
+    if torch.cuda.is_available():
+        device = 'cuda'
+    else:
+        device = 'cpu'
+        
     if os.path.exists(y_i_url):
         print('Load y intermediate from saved file')
         result = torch.load(y_i_url)
@@ -112,10 +118,11 @@ def load_y(opt,pseudo_data):
         for i,j in enumerate(pseudo_data):
         #    y = torch.autograd.Variable(j['B'].unsqueeze(0),
         #                                requires_grad = False)
-            y = j['B'].unsqueeze(0)  
-            if i==0:
-                result = y
-            else:
-                result = torch.cat((result, y))
+            #y = j['B'].unsqueeze(0)  
+##            if i==0:
+##                result = y
+##            else:
+##                result = torch.cat((result, y))
+            result.append(j['B'])
         torch.save(result, y_i_url)
     return result
