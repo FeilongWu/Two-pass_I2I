@@ -32,11 +32,13 @@ class Pix2PixModel(BaseModel):
         By default, we use vanilla GAN loss, UNet with batchnorm, and aligned datasets.
         """
         # changing the default values to match the pix2pix paper (https://phillipi.github.io/pix2pix/)
-        parser.set_defaults(norm='batch', netG='unet_256', dataset_mode='aligned')
+        #parser.set_defaults(norm='batch', netG='unet_256', dataset_mode='aligned')
+        parser.set_defaults(norm='instance', netG='resnet_9blocks', dataset_mode='aligned')
         if is_train:
             parser.set_defaults(pool_size=0, gan_mode='vanilla')
             parser.add_argument('--lambda_L1', type=float, default=100.0, help='weight for L1 loss')
             parser.add_argument('--lambda_Lc', type=float, default=15.0, help='weight for classification loss')
+            parser.set_defaults(no_dropout=True)
 
         return parser
 
@@ -59,17 +61,22 @@ class Pix2PixModel(BaseModel):
         # define networks (both generator and discriminator)
         self.netG = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm,
                                       not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
-
         if self.isTrain:  # define a discriminator; conditional GANs need to take both input and output images; Therefore, #channels for D is input_nc + output_nc
-            use_sigmoid = True
+            use_sigmoid = False
             #self.netD = networks.define_D(opt.input_nc + opt.output_nc, opt.ndf, opt.netD,
             #                              opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
-            self.netD = networks.define_D(opt.output_nc, opt.ndf, opt.netD,
-                                          opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids, use_sigmoid = use_sigmoid) # for relativistic loss
-
+##            self.netD = networks.define_D(opt.output_nc, opt.ndf, opt.netD,
+##                                          opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids, use_sigmoid = use_sigmoid) # for relativistic loss
+            self.netD = networks.define_D(opt.input_nc, opt.ndf, opt.netD,
+                                          opt.n_layers_D, opt.norm, use_sigmoid, opt.init_type, opt.init_gain, self.gpu_ids)
+            ##########################################
+            #for i in [opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm, not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids]:
+            #    print(i)
+            ##########################################
         if self.isTrain:
             # define loss functions
-            self.criterionGAN = networks.GANLoss(opt.gan_mode).to(self.device)
+            #self.criterionGAN = networks.GANLoss(opt.gan_mode).to(self.device)
+            self.criterionGAN = networks.GANLoss(case=2).to(self.device)
             self.criterionL1 = torch.nn.L1Loss()
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
             self.optimizer_G = torch.optim.Adam(self.netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
@@ -85,6 +92,9 @@ class Pix2PixModel(BaseModel):
             self.logsoftmax = torch.nn.LogSoftmax(dim=1).cuda()
             self.criterionIdt = torch.nn.L1Loss()
             #self.criterionComp = torch.nn.CrossEntropyLoss().cuda()
+
+            self.loss_D_real = 0.0
+            self.loss_D_fake = 0.0
 
     def set_input(self, input, decay = False, dataset_mode = 'aligned', index=None, y_i=None):
         # index: the index of y intermediate
@@ -108,7 +118,8 @@ class Pix2PixModel(BaseModel):
         if index:
             y_i[index] = torch.autograd.Variable(y_i[index].to(self.device), requires_grad = True)
             self.y_i = y_i
-        self.GT = input['ground_truth'].to(self.device)
+        if self.isTrain:
+            self.GT = input['ground_truth'].to(self.device)
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
         
