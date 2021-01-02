@@ -22,14 +22,15 @@ def get_params(opt, size):
     #x = random.randint(0, np.maximum(0, new_w - opt.crop_size))
     #y = random.randint(0, np.maximum(0, new_h - opt.crop_size))
     x=y=int((new_h - opt.crop_size)/2)
-    #flip = random.random() > 0.5
-    flip = False
+    flip = random.random() > 0.5
+    #flip = False
 
     return {'crop_pos': (x, y), 'flip': flip}
 
 
 def get_transform(opt, params=None, grayscale=False, method=Image.BICUBIC, convert=True):
     transform_list = []
+    flip = False
     if grayscale:
         transform_list.append(transforms.Grayscale(1))
     if 'resize' in opt.preprocess:
@@ -51,6 +52,7 @@ def get_transform(opt, params=None, grayscale=False, method=Image.BICUBIC, conve
         if params is None:
             transform_list.append(transforms.RandomHorizontalFlip())
         elif params['flip']:
+            flip = True
             transform_list.append(transforms.Lambda(lambda img: __flip(img, params['flip'])))
 
     if convert:
@@ -59,7 +61,7 @@ def get_transform(opt, params=None, grayscale=False, method=Image.BICUBIC, conve
             transform_list += [transforms.Normalize((0.5,), (0.5,))]
         else:
             transform_list += [transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
-    return transforms.Compose(transform_list)
+    return (transforms.Compose(transform_list), flip)
 
 
 def __make_power_2(img, base, method=Image.BICUBIC):
@@ -136,7 +138,7 @@ class AlignedPseudo1Dataset(BaseDataset):
 
         self.real_paths = sorted(make_dataset(self.dir_real, opt.max_dataset_size))   # load images from '/path/to/data/trainA(B)'
         self.real_size = len(self.real_paths)  # get the size of dataset A(B)
-        self.transform_real = get_transform(self.opt, grayscale=(self.output_nc == 1))
+        self.transform_real = get_transform(self.opt, grayscale=(self.output_nc == 1))[0]
             
 
     def __getitem__(self, index):
@@ -163,8 +165,10 @@ class AlignedPseudo1Dataset(BaseDataset):
         # apply the same transform to both A and B
         transform_params = get_params(self.opt, A.size)
         #transform_params = {'crop_pos': (0, 0), 'flip': False}
-        A_transform = get_transform(self.opt, transform_params, grayscale=(self.input_nc == 1))
-        B_transform = get_transform(self.opt, transform_params, grayscale=(self.output_nc == 1))
+        A_transform = get_transform(self.opt, transform_params, grayscale=(self.input_nc == 1))[0]
+        temp = get_transform(self.opt, transform_params, grayscale=(self.output_nc == 1))
+        B_transform = temp[0]
+        flip = temp[1]
 
         A = A_transform(A)
         B = B_transform(B)
@@ -179,7 +183,7 @@ class AlignedPseudo1Dataset(BaseDataset):
         real = B_transform(real_img)
 
         return {'A': A, 'B': B, 'ground_truth': real, 'A_paths': AB_path, \
-                'B_paths': AB_path, 'real_path': real_path}
+                'B_paths': AB_path, 'real_path': real_path, 'flip': flip}
 
     def __len__(self):
         """Return the total number of images in the dataset."""

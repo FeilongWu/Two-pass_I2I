@@ -8,25 +8,20 @@ import copy
 
 class Pix2PixModel(BaseModel):
     """ This class implements the pix2pix model, for learning a mapping from input images to output images given paired data.
-
     The model training requires '--dataset_mode aligned' dataset.
     By default, it uses a '--netG unet256' U-Net generator,
     a '--netD basic' discriminator (PatchGAN),
     and a '--gan_mode' vanilla GAN loss (the cross-entropy objective used in the orignal GAN paper).
-
     pix2pix paper: https://arxiv.org/pdf/1611.07004.pdf
     """
     @staticmethod
     def modify_commandline_options(parser, is_train=True):
         """Add new dataset-specific options, and rewrite default values for existing options.
-
         Parameters:
             parser          -- original option parser
             is_train (bool) -- whether training phase or test phase. You can use this flag to add training-specific or test-specific options.
-
         Returns:
             the modified parser.
-
         For pix2pix, we do not use image buffer
         The training objective is: GAN Loss + lambda_L1 * ||G(A)-B||_1
         By default, we use vanilla GAN loss, UNet with batchnorm, and aligned datasets.
@@ -44,7 +39,6 @@ class Pix2PixModel(BaseModel):
 
     def __init__(self, opt):
         """Initialize the pix2pix class.
-
         Parameters:
             opt (Option class)-- stores all the experiment flags; needs to be a subclass of BaseOptions
         """
@@ -96,19 +90,18 @@ class Pix2PixModel(BaseModel):
             self.loss_D_real = 0.0
             self.loss_D_fake = 0.0
 
-    def set_input(self, input, decay = False, dataset_mode = 'aligned', index=None, y_i=None):
+    def set_input(self, input, decay = False, dataset_mode = 'aligned', index=None, y_i=None, flip=False):
         # index: the index of y intermediate
         # y_i: y intermediate indexed by "index"
         """Unpack input data from the dataloader and perform necessary pre-processing steps.
-
         Parameters:
             input (dict): include the data itself and its metadata information.
-
         The option 'direction' can be used to swap images in domain A and domain B.
         """
         self.decay = decay
         self.dataset_mode = dataset_mode
         self.index = index
+        self.flip = flip
         
         AtoB = self.opt.direction == 'AtoB'
         
@@ -263,6 +256,8 @@ class Pix2PixModel(BaseModel):
         lo = - torch.mean(torch.mul(self.softmax(last_y_i), self.logsoftmax(target_y)))
         lo.backward()
         self.y_i[self.index].grad = None # zero all gradients
+        if self.flip:
+            self.y_i[self.index] = torch.flip(self.y_i[self.index], [3,0])
 
     def optimize_parameters(self):
         self.forward()                   # compute fake images: G(A)

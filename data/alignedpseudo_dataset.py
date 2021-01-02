@@ -7,14 +7,12 @@ import random
 
 class AlignedPseudoDataset(BaseDataset):
     """A dataset class for paired image dataset.
-
     It assumes that the directory '/path/to/data/train' contains image pairs in the form of {A,B}.
     During test time, you need to prepare a directory '/path/to/data/test'.
     """
 
     def __init__(self, opt):
         """Initialize this dataset class.
-
         Parameters:
             opt (Option class) -- stores all the experiment flags; needs to be a subclass of BaseOptions
         """
@@ -39,10 +37,8 @@ class AlignedPseudoDataset(BaseDataset):
 
     def __getitem__(self, index):
         """Return a data point and its metadata information.
-
         Parameters:
             index - - a random integer for data indexing
-
         Returns a dictionary that contains A, B, A_paths and B_paths
             A (tensor) - - an image in the input domain
             B (tensor) - - its corresponding image in the target domain

@@ -86,13 +86,14 @@ if __name__ == '__main__':
             iter_start_time = time.time()  # timer for computation per iteration
             if total_iters % opt.print_freq == 0:
                 t_data = iter_start_time - iter_data_time
-
             total_iters += opt.batch_size
             epoch_iter += opt.batch_size
+            if data['flip']:
+                y_i[i] = torch.flip(y_i[i], [3,0])
             data['B'] = y_i[i].clone().detach() # replace pseudo label with the y intermediate
             #data['B'].grad = None
             model.set_input(data, decay = decay, dataset_mode = dataset_mode,
-                            index=i, y_i=y_i) # unpack data from dataset and apply preprocessing
+                            index=i, y_i=y_i, flip=data['flip']) # unpack data from dataset and apply preprocessing
             model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
 
             if total_iters % opt.display_freq == 0:   # display images on visdom and save images to a HTML file
@@ -123,4 +124,3 @@ if __name__ == '__main__':
             torch.save(y_i, opt.dataroot+'//y_intermediate.pt')
 
         print('End of epoch %d / %d \t Time Taken: %d sec' % (epoch, opt.n_epochs + opt.n_epochs_decay, time.time() - epoch_start_time))
-
