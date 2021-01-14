@@ -36,6 +36,7 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--lr_policy', type=str, default='linear', help='learning rate policy. [linear | step | plateau | cosine]')
         parser.add_argument('--lr_decay_iters', type=int, default=50, help='multiply by a gamma every lr_decay_iters iterations')
         parser.add_argument('--pseudo_data_root', required=True, help='the path to the folder of pseudo label images which contains a sub-folder "train".')
+        parser.add_argument('--k', type=float , default=10, help='the weight for initializing the pseudo label".')
 
 
         self.isTrain = True
