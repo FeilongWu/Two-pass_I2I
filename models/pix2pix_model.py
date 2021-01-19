@@ -81,7 +81,8 @@ class Pix2PixModel(BaseModel):
             self.optimizers.append(self.optimizer_D)
             #self.optimizers.append(self.optimizer_D2)
             self.im_pool = ImagePool(opt.pool_size)
-            self.MedianPool = MedianPool2d()
+            #self.MedianPool = MedianPool2d()
+            self.AvgPool = torch.nn.AdaptiveAvgPool2d((int(opt.crop_size/2), int(opt.crop_size/2)))
             self.softmax = torch.nn.Softmax(dim=1)
             self.logsoftmax = torch.nn.LogSoftmax(dim=1).cuda()
             self.criterionIdt = torch.nn.L1Loss()
@@ -90,7 +91,7 @@ class Pix2PixModel(BaseModel):
             self.loss_D_real = 0.0
             self.loss_D_fake = 0.0
 
-    def set_input(self, input, decay = False, dataset_mode = 'aligned', index=None, y_i=None, flip=False):
+    def set_input(self, input, decay = False, dataset_mode = 'aligned', index=None, y_i=None, yiw=1, flip=False):
         # index: the index of y intermediate
         # y_i: y intermediate indexed by "index"
         """Unpack input data from the dataloader and perform necessary pre-processing steps.
@@ -101,7 +102,9 @@ class Pix2PixModel(BaseModel):
         self.decay = decay
         self.dataset_mode = dataset_mode
         self.index = index
-        self.flip = flip
+        self.yiw = yiw
+        self.flip=flip
+
         
         AtoB = self.opt.direction == 'AtoB'
         
@@ -162,9 +165,10 @@ class Pix2PixModel(BaseModel):
 
     def L_classification(self, pred, y_i):
         # calculate classification loss
-        gt_b = self.MedianPool(y_i)
-        pre_b = self.softmax(self.MedianPool(pred))
-
+        #gt_b = self.MedianPool(y_i)
+        #pre_b = self.softmax(self.MedianPool(pred))
+        gt_b = self.AvgPool(y_i)
+        pre_b = self.softmax(self.AvgPool(pred))
         loss = torch.mean(torch.mul(pre_b, torch.log(torch.div(pre_b,self.softmax(gt_b)))))
         return loss
 
@@ -179,15 +183,20 @@ class Pix2PixModel(BaseModel):
         # identity loss use only for pseudo labels
         if self.dataset_mode == 'alignedpseudo':
             tot_lambda = 0.1
-            self.idt_A = self.netG(self.real_B) 
-            self.idt_loss = self.criterionIdt(self.idt_A, self.real_B)*0.6
+            L1_w = 0.5
+            #self.idt_A = self.netG(self.real_B) 
+            #self.idt_loss = self.criterionIdt(self.idt_A, self.real_B)*0.6
+            self.idt_A = self.netG(self.GT) 
+            self.idt_loss = self.criterionIdt(self.idt_A, self.GT)*0.6
         else:
             tot_lambda = 1
+            L1_w = 50
             self.idt_loss = 0
 
-        self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_L1
+        self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_L1 * L1_w # L1_w = L1 weight, bigger for aligned
         pred_fake_rel = self.netD(self.im_pool.query(self.fake_B)) # prediction for relativistic loss
-        pred_real_rel = self.netD(self.real_B)
+        #pred_real_rel = self.netD(self.real_B)
+        pred_real_rel = self.netD(self.GT)
         self.loss_G_GAN = self.criterionGAN(pred_fake_rel - pred_real_rel, True)
         self.loss_cla = self.L_classification(self.fake_B, self.real_B)
         self.loss_G = (self.loss_G_GAN + self.loss_G_L1 + self.idt_loss + self.loss_cla) * tot_lambda
@@ -246,18 +255,21 @@ class Pix2PixModel(BaseModel):
 
     def backward_y_i(self):
         # update y_i using classfication and compatibility losses
-        lc = self.L_classification(self.fake_B.clone().detach(), self.y_i[self.index]) # classification loss self.fake_B.clone().detach()
+        lc = self.L_classification(self.fake_B.clone().detach(), self.y_i[self.index]) * 2 * self.yiw # classification loss self.fake_B.clone().detach()
         #y_i_copy = torch.from_numpy(copy.copy(self.y_i[self.index].numpy()))
         lc.backward(retain_graph=True)
 
-        last_y_i = self.MedianPool(self.y_i_copy)
-        target_y = self.MedianPool(self.y_i[self.index])
+        #last_y_i = self.MedianPool(self.y_i_copy)
+        #target_y = self.MedianPool(self.y_i[self.index])
+        last_y_i = self.AvgPool(self.y_i_copy)
+        target_y = self.AvgPool(self.y_i[self.index])
         #lo = self.criterionComp(last_y_i, target_y) # compatibility loss
-        lo = - torch.mean(torch.mul(self.softmax(last_y_i), self.logsoftmax(target_y)))
+        lo = - torch.mean(torch.mul(self.softmax(last_y_i), self.logsoftmax(target_y))) * 2 * self.yiw
         lo.backward()
         self.y_i[self.index].grad = None # zero all gradients
         if self.flip:
             self.y_i[self.index] = torch.flip(self.y_i[self.index], [3,0])
+
 
     def optimize_parameters(self):
         self.forward()                   # compute fake images: G(A)

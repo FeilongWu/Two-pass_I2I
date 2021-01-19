@@ -2,3 +2,4 @@ datasets/
 checkpoints/
 *.txt
 *.pyc
+results/

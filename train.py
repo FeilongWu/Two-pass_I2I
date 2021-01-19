@@ -64,6 +64,7 @@ if __name__ == '__main__':
     visualizer = Visualizer(opt)   # create a visualizer that display/save images and plots
     total_iters = 0                # the total number of training iterations
     decay = False
+    tot_epoch = opt.n_epochs + opt.n_epochs_decay
 
     for epoch in range(opt.epoch_count, opt.n_epochs + opt.n_epochs_decay + 1):    # outer loop for different epochs; we save the model by <epoch_count>, <epoch_count>+<save_latest_freq>
         if epoch > opt.n_epochs:
@@ -83,6 +84,10 @@ if __name__ == '__main__':
             model.set_input(data)         # unpack data from dataset and apply preprocessing
             model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
         for i, data in enumerate(dataset_pseudo):  # inner loop within one epoch
+            if epoch <= opt.n_epochs:
+                yiw = 1
+            else:
+                yiw = (tot_epoch - epoch) / opt.n_epochs_decay +0.000000001
             iter_start_time = time.time()  # timer for computation per iteration
             if total_iters % opt.print_freq == 0:
                 t_data = iter_start_time - iter_data_time
@@ -93,7 +98,7 @@ if __name__ == '__main__':
             data['B'] = y_i[i].clone().detach() # replace pseudo label with the y intermediate
             #data['B'].grad = None
             model.set_input(data, decay = decay, dataset_mode = dataset_mode,
-                            index=i, y_i=y_i, flip=data['flip']) # unpack data from dataset and apply preprocessing
+                            index=i, y_i=y_i, yiw=yiw, flip=data['flip']) # unpack data from dataset and apply preprocessing
             model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
 
             if total_iters % opt.display_freq == 0:   # display images on visdom and save images to a HTML file
