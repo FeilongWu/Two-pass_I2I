@@ -3,9 +3,13 @@
 <img src='cityscape.png' width=500>
 
 ## Data
-Use this link to the [repo](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix) to download the cityscape dataset.
+Use this [repo](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix) to download the cityscape dataset.
 
 ## Architecture
+
+<img src='firstpass.png' width=600>
+
+<img src='secondpass.png' width=600>
 
 ## Usage
 
